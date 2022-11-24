@@ -1,173 +1,98 @@
 import * as THREE from 'three'
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import { SVGLoader } from 'three/examples/jsm/loaders/SVGLoader'
 import { WEBGL } from './webgl'
-import './modal'
 
 if (WEBGL.isWebGLAvailable()) {
-  var camera, scene, renderer
-  var plane
-  var mouse,
-    raycaster,
-    isShiftDown = false
+  // 장면
+  const scene = new THREE.Scene()
+  scene.background = new THREE.Color(0xffffff)
 
-  var rollOverMesh, rollOverMaterial
-  var cubeGeo, cubeMaterial
+  // 카메라
+  const camera = new THREE.PerspectiveCamera(
+    50,
+    window.innerWidth / window.innerHeight,
+    0.01,
+    1e5
+  )
+  camera.position.z = 250
+  camera.position.x = 100
+  camera.position.y = 150
 
-  var objects = []
+  // 렌더러
+  const renderer = new THREE.WebGLRenderer({
+    alpha: true,
+    antialias: true,
+  })
+  renderer.setSize(window.innerWidth, window.innerHeight)
 
-  init()
-  render()
+  document.body.appendChild(renderer.domElement)
 
-  function init() {
-    camera = new THREE.PerspectiveCamera(
-      45,
-      window.innerWidth / window.innerHeight,
-      1,
-      10000
-    )
-    camera.position.set(500, 800, 1300)
-    camera.lookAt(0, 0, 0)
+  // orbitcontrol
+  const controls = new OrbitControls(camera, renderer.domElement)
+  controls.enableDamping = true
+  controls.minDistance = 20
+  controls.maxDistance = 2000
+  controls.update()
 
-    scene = new THREE.Scene()
-    scene.background = new THREE.Color(0xf0f0f0)
+  // 빛
+  const pointLight = new THREE.PointLight(0xffffff, 1)
+  pointLight.position.set(0, 2, 12)
+  scene.add(pointLight)
 
-    var rollOverGeo = new THREE.BoxBufferGeometry(50, 50, 50)
-    rollOverMaterial = new THREE.MeshBasicMaterial({
-      color: 0xff0000,
-      opacity: 0.5,
-      transparent: true,
+  // svg?
+
+  const fillMaterial = new THREE.MeshBasicMaterial({ color: '#F3FBFB' })
+  const stokeMaterial = new THREE.LineBasicMaterial({
+    color: '#00A5E6',
+  })
+
+  const loader = new SVGLoader()
+  const svgUrl = '../static/objects/small-map.svg'
+  const svgGroup = new THREE.Group()
+  const updateMap = []
+  svgGroup.scale.y *= -1
+
+  loader.load(svgUrl, (data) => {
+    data.paths.forEach((path) => {
+      const shapes = path.toShapes(true)
+
+      shapes.forEach((shape) => {
+        const meshGeometry = new THREE.ExtrudeBufferGeometry(shape, {
+          depth: 20,
+          bevelEnabled: false,
+        })
+        const linesGeometry = new THREE.EdgesGeometry(meshGeometry)
+        const mesh = new THREE.Mesh(meshGeometry, fillMaterial)
+        const lines = new THREE.LineSegments(linesGeometry, stokeMaterial)
+
+        updateMap.push({ shape, mesh, lines })
+        svgGroup.add(mesh, lines)
+      })
     })
-    rollOverMesh = new THREE.Mesh(rollOverGeo, rollOverMaterial)
-    scene.add(rollOverMesh)
+  })
+  scene.add(svgGroup)
 
-    cubeGeo = new THREE.BoxBufferGeometry(50, 50, 50)
-    cubeMaterial = new THREE.MeshLambertMaterial({
-      color: 0xfeb74c,
-      map: new THREE.TextureLoader().load('static/textures/square.png'),
-    })
+  svgGroup.position.x = -900
+  svgGroup.position.y = -400
+  svgGroup.position.z = -500
+  svgGroup.rotateX(-Math.PI / 2)
 
-    var gridHelper = new THREE.GridHelper(1000, 20)
-    scene.add(gridHelper)
+  console.log(svgGroup)
 
-    raycaster = new THREE.Raycaster()
-    mouse = new THREE.Vector2()
+  // 렌더링 루프
+  function render(time) {
+    time *= 0.001
 
-    var geometry = new THREE.PlaneBufferGeometry(1000, 1000)
-    geometry.rotateX(-Math.PI / 2)
+    // cube.rotation.x = time
+    // cube.rotation.y = time
 
-    plane = new THREE.Mesh(
-      geometry,
-      new THREE.MeshBasicMaterial({ visible: false })
-    )
-    scene.add(plane)
-
-    objects.push(plane)
-
-    var ambientLight = new THREE.AmbientLight(0x606060)
-    scene.add(ambientLight)
-
-    var directionalLight = new THREE.DirectionalLight(0xffffff)
-    directionalLight.position.set(1, 0.75, 0.5).normalize()
-    scene.add(directionalLight)
-
-    renderer = new THREE.WebGLRenderer({ antialias: true })
-    renderer.setPixelRatio(window.devicePixelRatio)
-    renderer.setSize(window.innerWidth, window.innerHeight)
-    document.body.appendChild(renderer.domElement)
-
-    document.addEventListener('mousemove', onDocumentMouseMove, false)
-    document.addEventListener('mousedown', onDocumentMouseDown, false)
-    document.addEventListener('keydown', onDocumentKeyDown, false)
-    document.addEventListener('keyup', onDocumentKeyUp, false)
-    window.addEventListener('resize', onWindowResize, false)
-  }
-
-  function onWindowResize() {
-    camera.aspect = window.innerWidth / window.innerHeight
-    camera.updateProjectionMatrix()
-
-    renderer.setSize(window.innerWidth, window.innerHeight)
-  }
-
-  function onDocumentMouseMove(event) {
-    event.preventDefault()
-
-    mouse.set(
-      (event.clientX / window.innerWidth) * 2 - 1,
-      -(event.clientY / window.innerHeight) * 2 + 1
-    )
-
-    raycaster.setFromCamera(mouse, camera)
-
-    var intersects = raycaster.intersectObjects(objects)
-
-    if (intersects.length > 0) {
-      var intersect = intersects[0]
-
-      rollOverMesh.position.copy(intersect.point).add(intersect.face.normal)
-      rollOverMesh.position
-        .divideScalar(50)
-        .floor()
-        .multiplyScalar(50)
-        .addScalar(25)
-    }
-
-    render()
-  }
-
-  function onDocumentMouseDown(event) {
-    event.preventDefault()
-
-    mouse.set(
-      (event.clientX / window.innerWidth) * 2 - 1,
-      -(event.clientY / window.innerHeight) * 2 + 1
-    )
-
-    raycaster.setFromCamera(mouse, camera)
-
-    var intersects = raycaster.intersectObjects(objects)
-
-    if (intersects.length > 0) {
-      var intersect = intersects[0]
-
-      if (isShiftDown) {
-        if (intersect.object !== plane) {
-          scene.remove(intersect.object)
-
-          objects.splice(objects.indexOf(intersect.object), 1)
-        }
-
-      } else {
-        var voxel = new THREE.Mesh(cubeGeo, cubeMaterial)
-        voxel.position.copy(intersect.point).add(intersect.face.normal)
-        voxel.position.divideScalar(50).floor().multiplyScalar(50).addScalar(25)
-        scene.add(voxel)
-
-        objects.push(voxel)
-      }
-
-      render()
-    }
-  }
-
-  function onDocumentKeyDown(event) {
-    switch (event.keyCode) {
-      case 16:
-        isShiftDown = true
-        break
-    }
-  }
-
-  function onDocumentKeyUp(event) {
-    switch (event.keyCode) {
-      case 16:
-        isShiftDown = false
-        break
-    }
-  }
-
-  function render() {
     renderer.render(scene, camera)
+
+    requestAnimationFrame(render)
   }
+
+  requestAnimationFrame(render)
 } else {
   var warning = WEBGL.getWebGLErrorMessage()
   document.body.appendChild(warning)
